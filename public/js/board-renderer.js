@@ -154,7 +154,8 @@ export class BoardRenderer {
 
   _drawPiece(pid, px, py) {
     const { ctx, cellSize: cs } = this;
-    const img = this.assets.pieces[`${pieceAnimal(pid)}_${pieceColor(pid)}`];
+    const animal = pieceAnimal(pid);
+    const img = this.assets.pieces[`${animal}_${pieceColor(pid)}`];
     const pad = cs * 0.08;
     if (img) {
       ctx.drawImage(img, px + pad, py + pad, cs - pad * 2, cs - pad * 2);
@@ -167,8 +168,26 @@ export class BoardRenderer {
       ctx.font = `bold ${Math.round(cs * 0.4)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(pieceAnimal(pid)[0].toUpperCase(), px + cs / 2, py + cs / 2);
+      ctx.fillText(animal[0].toUpperCase(), px + cs / 2, py + cs / 2);
     }
+    this._drawPieceLabel(animal, px, py);
+  }
+
+  // Small animal-name caption at the bottom of the cell, outlined so it
+  // reads on both blue and black piece art at any cell size.
+  _drawPieceLabel(animal, px, py) {
+    const { ctx, cellSize: cs } = this;
+    const name = animal[0].toUpperCase() + animal.slice(1);
+    const fontPx = Math.max(8, Math.round(cs * 0.16));
+    ctx.font = `600 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(2, Math.round(fontPx / 4));
+    ctx.strokeStyle = 'rgba(15, 20, 12, 0.85)';
+    ctx.strokeText(name, px + cs / 2, py + cs - 1);
+    ctx.fillStyle = '#f4f7ee';
+    ctx.fillText(name, px + cs / 2, py + cs - 1);
   }
 
   _drawFlashes(now) {
