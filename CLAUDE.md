@@ -22,9 +22,18 @@ is the site root — nothing outside it is deployed).
 
 ## Architecture
 
-- `public/py/engine/`, `public/py/ai/`, `public/py/config.py` — **verbatim
-  copies of the desktop repo (engine v1.5). Do not fork rule/search logic
-  here; port changes from the desktop repo instead, then re-run pytest.**
+- `public/py/engine/`, `public/py/ai/` — game rules + AI. Started as verbatim
+  copies of the desktop repo's v1.5 engine; **this repo's engine is now v1.6**
+  (ahead of desktop): v1.5 + `use_iir` + `use_capture_history` +
+  `use_see_prune`, gated by a 300-game self-play match vs the frozen
+  `v15_strong_config()` (53.7%, positive on 3 seeds, 350ms budget).
+  `use_singular` / `use_probcut` / `use_nmp_dynamic` are implemented but
+  measured strength-neutral, so they default OFF (`_EXPERIMENTAL_FLAGS`).
+  **Rule logic must stay in sync with the desktop repo; engine (search/eval)
+  changes need a fresh self-play gate via
+  `PYTHONPATH="public/py;." python -m tools.strength_harness selfplay
+  --a strong --b v15 --games 200+ --budget 350` and a re-pin of
+  `test_v16_shipped_signature`.**
 - `public/py/web_api.py` — web-only JSON bridge. All functions return
   `{"ok", "data", "error"}` JSON strings so no PyProxies cross the boundary.
   Owns the single game session (GameState + one AIPlayer per color).

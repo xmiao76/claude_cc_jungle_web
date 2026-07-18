@@ -115,6 +115,9 @@ class AIPlayer:
         # Continuation history (use_cont_history): keyed on the previous
         # move's destination and this move's destination.
         self._cont_hist: dict[tuple[int, int, int, int], int] = {}
+        # Capture history (use_capture_history): keyed on
+        # (attacker_rank, to_col, to_row, victim_rank).
+        self._capt_hist: dict[tuple[int, int, int, int], int] = {}
         # Static evals along the current search path (use_improving).
         self._static_stack: list[int | None] = [None] * _MAX_PLY
         # Repetition tracking for the current search (use_search_repetition):
@@ -281,20 +284,16 @@ class AIPlayer:
         self._history.clear()
         self._counter.clear()
         self._cont_hist.clear()
+        self._capt_hist.clear()
 
     def _age_history(self) -> None:
-        for k in list(self._history.keys()):
-            v = self._history[k] >> 1
-            if v == 0:
-                del self._history[k]
-            else:
-                self._history[k] = v
-        for k in list(self._cont_hist.keys()):
-            v = self._cont_hist[k] >> 1
-            if v == 0:
-                del self._cont_hist[k]
-            else:
-                self._cont_hist[k] = v
+        for table in (self._history, self._cont_hist, self._capt_hist):
+            for k in list(table.keys()):
+                v = table[k] >> 1
+                if v == 0:
+                    del table[k]
+                else:
+                    table[k] = v
 
     # ------------------------------------------------------------------
     # Repetition / draw scoring
@@ -356,6 +355,7 @@ class AIPlayer:
 
         use_mvv_lva = self.cfg.use_mvv_lva_fix
         use_see = self.cfg.use_see_ordering
+        capt_hist = self._capt_hist if self.cfg.use_capture_history else None
         cont_hist = self._cont_hist if (self.cfg.use_cont_history
                                         and prev_move is not None) else None
         if cont_hist is not None:
@@ -363,7 +363,7 @@ class AIPlayer:
 
         def key(m: Move) -> int:
             if tt_best is not None and m == tt_best:
-                return -1_000_000
+                return -2_000_000_000 if capt_hist is not None else -1_000_000
             if m.captured:
                 if not use_mvv_lva:
                     # Original (victim-only) ordering — preserved for baseline A/B.
@@ -375,6 +375,15 @@ class AIPlayer:
                     if see_val < 0:
                         # Losing capture: search it after quiet moves.
                         return 10_000 - see_val
+                if capt_hist is not None:
+                    # MVV first (victim class is never overridden); capture
+                    # history can outvote the LVA attacker preference within
+                    # the same victim class (every Jungle animal is unique per
+                    # side, so a pure same-class tiebreak would never fire).
+                    ch = capt_hist.get((attacker, m.tc, m.tr, victim), 0) >> 3
+                    if ch > 2048:
+                        ch = 2048
+                    return -100_000_000 - victim * 4096 + attacker * 64 - ch
                 # MVV-LVA: most valuable victim first, least valuable attacker first.
                 return -100_000 - victim * 16 + attacker
             if m == killers[0]:
@@ -452,7 +461,8 @@ class AIPlayer:
         return best_score
 
     def _negamax(self, state: GameState, depth: int, alpha: int, beta: int,
-                 ply: int, prev_move: Move | None, allow_null: bool) -> int:
+                 ply: int, prev_move: Move | None, allow_null: bool,
+                 excluded: Move | None = None) -> int:
         self._nodes += 1
         if ply > self._seldepth:
             self._seldepth = ply
@@ -479,7 +489,9 @@ class AIPlayer:
         tt_best = None
         if tt_entry is not None:
             tt_best = tt_entry.best_move
-            if tt_entry.depth >= depth and not is_pv:
+            # No TT cutoffs in a singular exclusion search: the stored score
+            # includes the excluded move, which this search must ignore.
+            if excluded is None and tt_entry.depth >= depth and not is_pv:
                 tt_score = _tt_score_from_probe(tt_entry.score, ply)
                 if tt_entry.flag == TT_EXACT:
                     return tt_score
@@ -494,6 +506,13 @@ class AIPlayer:
             if winner == state.turn:
                 return _mate_in(ply)
             return _mated_in(ply)
+
+        # ---- Internal iterative reduction (use_iir) ----
+        # A deep node with no TT move searches blind; shave a ply and let the
+        # re-visit (with a TT move) do the full-depth work efficiently.
+        if (self.cfg.use_iir and tt_best is None
+                and depth >= self.cfg.iir_min_depth):
+            depth -= 1
 
         if depth <= 0:
             return self._quiesce(state, alpha, beta, qply=0, ply=ply)
@@ -549,7 +568,8 @@ class AIPlayer:
             self._static_stack[ply] = None
 
         # ---- Null move pruning ----
-        if (allow_null and not is_pv and depth >= NMP_MIN_DEPTH
+        if (allow_null and not is_pv and excluded is None
+                and depth >= NMP_MIN_DEPTH
                 and state.board.alive_count(state.turn) >= NMP_MIN_PIECES):
             if static_eval is None:
                 if (self.cfg.use_tt_static_eval and tt_entry is not None
@@ -560,10 +580,17 @@ class AIPlayer:
                 else:
                     static_eval = evaluate(state, state.turn, self.cfg)
             if static_eval >= beta:
+                if self.cfg.use_nmp_dynamic:
+                    # Reduce more when deep and when far above beta.
+                    surplus = (static_eval - beta) // 200
+                    r = NMP_REDUCTION + depth // 6 + (surplus if surplus < 2 else 2)
+                    r = min(r, depth - 1)
+                else:
+                    r = NMP_REDUCTION
                 state.apply_null()
                 prev_floor = self._null_floor
                 self._null_floor = len(state._hash_history)
-                null_score = -self._negamax(state, depth - 1 - NMP_REDUCTION,
+                null_score = -self._negamax(state, depth - 1 - r,
                                             -beta, -beta + 1, ply + 1,
                                             prev_move=None, allow_null=False)
                 self._null_floor = prev_floor
@@ -576,7 +603,66 @@ class AIPlayer:
                         null_score = beta
                     return null_score
 
+        # ---- ProbCut (use_probcut) ----
+        # If a winning/equal capture verified at reduced depth already lands a
+        # margin above beta, this node will almost surely fail high — cut now.
+        if (self.cfg.use_probcut and not is_pv and excluded is None
+                and depth >= self.cfg.probcut_min_depth and not_mate_window
+                and static_eval is not None):
+            pc_beta = beta + self.cfg.probcut_margin
+            # Skip when the TT already proves this node can't reach pc_beta
+            # at comparable depth.
+            tt_blocks = (tt_entry is not None and tt_entry.depth >= depth - 3
+                         and tt_entry.flag != TT_LOWER
+                         and _tt_score_from_probe(tt_entry.score, ply) < pc_beta)
+            if not tt_blocks:
+                caps = sorted((m for m in moves if m.captured),
+                              key=lambda m: -abs(m.captured))
+                tried = 0
+                for move in caps:
+                    if tried >= self.cfg.probcut_max_moves:
+                        break
+                    if see_capture(state.board, move) < 0:
+                        continue
+                    tried += 1
+                    state.apply_move(move)
+                    score = -self._negamax(state, depth - 4, -pc_beta,
+                                           -pc_beta + 1, ply + 1,
+                                           prev_move=move, allow_null=True)
+                    state.undo_move()
+                    if self._stopped:
+                        return 0
+                    if score >= pc_beta:
+                        self._tt.put(tt_key, depth - 3,
+                                     _tt_score_to_store(score, ply),
+                                     TT_LOWER, move, static_eval)
+                        return score
+
         moves = self._order_moves(moves, tt_best, ply, prev_move, board=state.board)
+
+        # ---- Singular extension (use_singular) ----
+        # If every alternative to a deep TT move fails a margin below its
+        # score, the TT move is forced — search it one ply deeper.
+        extension = 0
+        if (self.cfg.use_singular and excluded is None and ply > 0
+                and depth >= self.cfg.singular_min_depth
+                and tt_best is not None and tt_entry is not None
+                and tt_entry.flag != TT_UPPER
+                and tt_entry.depth >= depth - 3
+                and abs(tt_entry.score) < _MATE_BOUND
+                and len(moves) >= 2):
+            tt_score = _tt_score_from_probe(tt_entry.score, ply)
+            s_beta = tt_score - self.cfg.singular_margin * depth
+            s_score = self._negamax(state, (depth - 1) // 2, s_beta - 1, s_beta,
+                                    ply, prev_move, allow_null=False,
+                                    excluded=tt_best)
+            if self._stopped:
+                return 0
+            if s_score < s_beta:
+                extension = 1
+            elif s_beta >= beta:
+                # Multi-cut: even without the TT move the node beats beta.
+                return s_beta
 
         # Opponent den square: a quiet move that enters it is a *winning* move and
         # must never be futility/late-move pruned.
@@ -587,7 +673,10 @@ class AIPlayer:
         original_alpha = alpha
 
         for idx, move in enumerate(moves):
+            if excluded is not None and move == excluded:
+                continue
             is_quiet = not move.captured and (move.tc, move.tr) != opp_den
+            ext = extension if (extension and move == tt_best) else 0
 
             # ---- Forward pruning of late / hopeless quiet moves (non-PV only) ----
             if is_quiet and best_move is not None and not is_pv and not_mate_window:
@@ -607,6 +696,14 @@ class AIPlayer:
                         margin -= 50
                     if static_eval + margin <= alpha:
                         continue
+
+            # ---- SEE pruning of losing captures at shallow depth ----
+            if (move.captured and self.cfg.use_see_prune
+                    and best_move is not None and not is_pv and not_mate_window
+                    and depth <= self.cfg.see_prune_max_depth
+                    and see_capture(state.board, move)
+                        < -self.cfg.see_prune_margin * depth):
+                continue
 
             state.apply_move(move)
 
@@ -637,13 +734,13 @@ class AIPlayer:
 
             if do_full_search:
                 if idx == 0:
-                    score = -self._negamax(state, depth - 1, -beta, -alpha,
+                    score = -self._negamax(state, depth - 1 + ext, -beta, -alpha,
                                             ply + 1, prev_move=move, allow_null=True)
                 else:
-                    score = -self._negamax(state, depth - 1, -alpha - 1, -alpha,
+                    score = -self._negamax(state, depth - 1 + ext, -alpha - 1, -alpha,
                                             ply + 1, prev_move=move, allow_null=True)
                     if not self._stopped and alpha < score < beta:
-                        score = -self._negamax(state, depth - 1, -beta, -alpha,
+                        score = -self._negamax(state, depth - 1 + ext, -beta, -alpha,
                                                 ply + 1, prev_move=move, allow_null=True)
 
             state.undo_move()
@@ -655,6 +752,12 @@ class AIPlayer:
             if score > alpha:
                 alpha = score
             if alpha >= beta:
+                # Beta cutoff: capture history for captures.
+                if move.captured and self.cfg.use_capture_history:
+                    ck = (abs(state.board.get(move.fc, move.fr)),
+                          move.tc, move.tr, abs(move.captured))
+                    self._capt_hist[ck] = (self._capt_hist.get(ck, 0)
+                                           + depth * depth)
                 # Beta cutoff: record killer + counter + history for non-captures
                 if not move.captured and 0 <= ply < _MAX_PLY:
                     slots = self._killers[ply]
@@ -676,7 +779,12 @@ class AIPlayer:
                             )
                 break
 
-        if best_move is not None:
+        if best_move is None and excluded is not None:
+            # Every non-excluded move was skipped/absent: fail low, so the
+            # exclusion search reports the TT move as singular.
+            return alpha
+
+        if best_move is not None and excluded is None:
             flag = TT_EXACT
             if best_score <= original_alpha:
                 flag = TT_UPPER

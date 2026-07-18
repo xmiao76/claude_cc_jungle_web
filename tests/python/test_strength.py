@@ -14,8 +14,8 @@ from engine.pieces import Animal, Color, make_piece_id
 from ai.minimax import AIPlayer
 from ai.search_config import (
     SearchConfig, baseline_config, strong_config,
-    v13_strong_config, v14_strong_config,
-    _V13_BOOL_FLAGS, _V14_BOOL_FLAGS,
+    v13_strong_config, v14_strong_config, v15_strong_config,
+    _V13_BOOL_FLAGS, _V14_BOOL_FLAGS, _V15_BOOL_FLAGS, _EXPERIMENTAL_FLAGS,
 )
 from tools.strength_harness import play_match, play_one
 from config import DEN_BLACK
@@ -54,10 +54,14 @@ def test_baseline_disables_all_bool_flags():
                for f in fields(SearchConfig) if isinstance(f.default, bool))
 
 
-def test_strong_enables_all_bool_flags():
+def test_strong_enables_all_gate_passing_bool_flags():
+    """The shipped config turns on every flag except the documented
+    experimental (gate-neutral) ones, which must stay off."""
     strong = strong_config()
-    assert all(getattr(strong, f.name) is True
-               for f in fields(SearchConfig) if isinstance(f.default, bool))
+    for f in fields(SearchConfig):
+        if isinstance(f.default, bool):
+            expected = f.name not in _EXPERIMENTAL_FLAGS
+            assert getattr(strong, f.name) is expected, f.name
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +426,167 @@ def test_v14_signature_reproduces_14_engine():
         == (6, 6, 6, 5, 3793)
     assert _fixed_depth_signature(v14_strong_config(), _start_position(), 0) \
         == (1, 7, 2, 7, 1049)
+
+
+def test_v15_flags_match_the_15_release():
+    """v15 = every 1.5-era bool flag on, every newer bool flag off."""
+    v15 = v15_strong_config()
+    for f in fields(SearchConfig):
+        if isinstance(f.default, bool):
+            expected = f.name in _V15_BOOL_FLAGS
+            assert getattr(v15, f.name) is expected, f.name
+
+
+def test_v15_signature_reproduces_15_engine():
+    """v15 search behavior is byte-identical to the shipped 1.5 engine
+    (signatures captured from strong_config() at the v1.6 freeze instant)."""
+    assert _fixed_depth_signature(v15_strong_config(), midgame(), 1) \
+        == (6, 6, 6, 5, 5471)
+    assert _fixed_depth_signature(v15_strong_config(), _start_position(), 0) \
+        == (1, 7, 2, 7, 1049)
+
+
+def test_v16_shipped_signature():
+    """Pins the shipped v1.6 engine (v15 + IIR + SEE prune + capture history,
+    gate: 53.7% over 300 games vs v15). Re-pin only on an intentional,
+    gate-passing engine change."""
+    assert _fixed_depth_signature(strong_config(), midgame(), 1) \
+        == (2, 6, 3, 6, 5185)
+    assert _fixed_depth_signature(strong_config(), _start_position(), 0) \
+        == (1, 7, 2, 7, 1049)
+
+
+# ---------------------------------------------------------------------------
+# v1.6 search features
+# ---------------------------------------------------------------------------
+
+def _deep_fixed_nodes(cfg: SearchConfig, gs: GameState, depth: int):
+    """Deterministic deep search with a warm TT (mimics iterative deepening:
+    a depth-1 shallower pass first, so TT-driven features like singular
+    extensions and ProbCut have entries to work with)."""
+    ai = AIPlayer(gs.turn, 2, cfg)
+    ai._time_limit = 1e9
+    ai._reset_search_heuristics()
+    ai._setup_repetition_tracking(gs)
+    ai._search_fixed_depth(gs, depth - 1)
+    move = ai._search_fixed_depth(gs, depth)
+    return (move.fc, move.fr, move.tc, move.tr, ai._nodes)
+
+
+def tactical_midgame() -> GameState:
+    """A contact-rich midgame (captures available near the root) so that
+    capture-driven features — ProbCut, SEE pruning, capture history — have
+    material to work with inside a depth-8 tree. All squares are land."""
+    gs = make_gs(
+        (3, 3, Color.BLUE, Animal.LION),      # Lion x Leopard available
+        (3, 5, Color.BLUE, Animal.WOLF),
+        (0, 5, Color.BLUE, Animal.DOG),       # Dog x Cat available
+        (0, 6, Color.BLUE, Animal.ELEPHANT),
+        (6, 8, Color.BLUE, Animal.TIGER),
+        (3, 4, Color.BLACK, Animal.LEOPARD),  # attacks the Wolf
+        (0, 4, Color.BLACK, Animal.CAT),
+        (0, 2, Color.BLACK, Animal.RAT),
+        (6, 2, Color.BLACK, Animal.ELEPHANT),
+        (6, 0, Color.BLACK, Animal.LION),
+    )
+    gs.turn = Color.BLUE
+    return gs
+
+
+def test_v16_search_flags_are_wired():
+    """Each v1.6 search flag must actually change the search tree: flag-on
+    and flag-off deep fixed-depth signatures differ (node counts diverge)."""
+    base = strong_config()
+    for flag in ("use_iir", "use_singular",
+                 "use_probcut", "use_nmp_dynamic"):
+        on = _deep_fixed_nodes(replace(base, **{flag: True}),
+                               tactical_midgame(), 8)
+        off = _deep_fixed_nodes(replace(base, **{flag: False}),
+                                tactical_midgame(), 8)
+        assert on != off, f"{flag} appears to have no effect on the search"
+
+
+def test_see_prune_skips_losing_capture_subtree():
+    """A big-gap defended capture (Lion x Cat guarded by Elephant, SEE -500)
+    is pruned at shallow depth in a non-PV all-node: fewer nodes with the
+    flag on, same fail-low outcome. (Losing captures need a large rank gap
+    in Jungle — attacker must outrank victim to capture at all — so generic
+    deep-tree node counts rarely exercise this path.)"""
+    from ai.evaluator import evaluate
+    gs = make_gs(
+        (0, 3, Color.BLUE, Animal.LION),
+        (0, 4, Color.BLACK, Animal.CAT),       # victim, worth 200
+        (0, 5, Color.BLACK, Animal.ELEPHANT),  # defender: recapture -700
+        (6, 8, Color.BLUE, Animal.TIGER),
+        (6, 0, Color.BLACK, Animal.LION),
+    )
+    gs.turn = Color.BLUE
+    se = evaluate(gs, Color.BLUE, strong_config())
+
+    def nodes(flag: bool) -> int:
+        ai = AIPlayer(Color.BLUE, 2,
+                      replace(strong_config(), use_see_prune=flag))
+        ai._time_limit = 1e9
+        ai._reset_search_heuristics()
+        ai._setup_repetition_tracking(gs)
+        # Null window just above the static eval: non-PV, no RFP/razor/
+        # futility windows triggered, every move fails low → the whole move
+        # list (losing capture last) is searched.
+        ai._negamax(gs, 2, se + 100, se + 101, ply=1, prev_move=None,
+                    allow_null=False)
+        return ai._nodes
+
+    assert nodes(True) < nodes(False), \
+        "SEE pruning did not skip the losing capture's subtree"
+
+
+def test_capture_history_reorders_attackers():
+    """Capture history can outvote the LVA preference within a victim class:
+    a Wolf capture with strong history outranks the default Dog capture.
+    (Node-count wiring is impractical for this flag — every Jungle animal is
+    unique per side, so same-victim double attacks are rare in real trees.)"""
+    gs = make_gs(
+        (3, 4, Color.BLACK, Animal.CAT),    # victim
+        (3, 5, Color.BLUE, Animal.DOG),     # LVA-preferred attacker (rank 3)
+        (3, 3, Color.BLUE, Animal.WOLF),    # rank 4; history-boosted below
+        (0, 8, Color.BLUE, Animal.LION),
+        (6, 0, Color.BLACK, Animal.LION),
+    )
+    gs.turn = Color.BLUE
+
+    def capture_order(with_history: bool):
+        ai = AIPlayer(Color.BLUE, 2, strong_config())
+        if with_history:
+            ai._capt_hist[(4, 3, 4, 2)] = 100_000   # wolf x cat at (3,4)
+        ordered = ai._order_moves(gs.legal_moves(), None, 0, None, gs.board)
+        caps = [(m.fc, m.fr) for m in ordered if m.captured]
+        return caps
+
+    assert capture_order(False)[0] == (3, 5), "LVA default: Dog first"
+    assert capture_order(True)[0] == (3, 3), "history outvotes LVA: Wolf first"
+
+
+def test_singular_exclusion_search_stores_no_tt_entry():
+    """An exclusion search must not overwrite TT entries for its node: the
+    stored score would wrongly omit the excluded (best) move."""
+    gs = midgame()
+    ai = AIPlayer(Color.BLUE, 2, strong_config())
+    ai._time_limit = 1e9
+    ai._reset_search_heuristics()
+    ai._setup_repetition_tracking(gs)
+    moves = gs.legal_moves()
+    key = gs.board.turn_hash(gs.turn)
+    ai._negamax(gs, 4, -100, 100, ply=1, prev_move=None, allow_null=False,
+                excluded=moves[0])
+    assert ai._tt.get(key) is None
+
+
+def test_singular_extension_present_in_deep_search():
+    """The strong engine still finds the safe midgame move with SE enabled
+    and reaches the same best move as v15 on the pinned position."""
+    new = _deep_fixed_nodes(strong_config(), midgame(), 8)
+    old = _deep_fixed_nodes(v15_strong_config(), midgame(), 8)
+    assert new[:4] == old[:4] == (6, 6, 6, 5)
 
 
 # ---------------------------------------------------------------------------

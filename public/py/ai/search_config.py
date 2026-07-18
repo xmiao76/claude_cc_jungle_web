@@ -70,6 +70,28 @@ class SearchConfig:
     use_tuned_weights: bool = True       # eval reads EVAL_WEIGHTS_TUNED (Texel
                                          # fit) instead of the hand weights
 
+    # --- v1.6 enhancements (not in v13/v14/v15 configs) ---
+    # Shipped in v1.6 after a 300-game gate vs v15 (53.7%, positive on all
+    # three seeds, budget 350ms):
+    use_iir: bool = True                 # internal iterative reduction: shave a
+                                         # ply on deep TT-miss nodes
+    use_capture_history: bool = True     # capture history: order captures by
+                                         # observed cutoff success (can outvote
+                                         # LVA within a victim class)
+    use_see_prune: bool = True           # prune SEE-losing captures at shallow
+                                         # depth in the main search
+    # EXPERIMENTAL — implemented and wired, but measured strength-neutral in
+    # the v1.6 gate (all-on scored 50.3% over 300 games; this trio alone 52.0%
+    # over 100). Default OFF until a retuned version passes its own gate:
+    use_singular: bool = False           # singular extensions: extend the TT
+                                         # move when every alternative fails a
+                                         # margin below its score
+    use_probcut: bool = False            # ProbCut: reduced-depth verification
+                                         # cutoff when a good capture lands far
+                                         # above beta
+    use_nmp_dynamic: bool = False        # null-move reduction grows with depth
+                                         # and static-eval surplus (legacy: fixed R)
+
     # --- Tuning margins (in the same centipawn-like scale as PIECE_VALUES) ---
     rfp_margin: int = 120                 # per ply of depth
     rfp_max_depth: int = 4
@@ -79,9 +101,29 @@ class SearchConfig:
     futility_max_depth: int = 2
     lmp_base: int = 6                     # base quiet-move count before LMP kicks in
 
+    # --- v1.6 tuning margins ---
+    iir_min_depth: int = 4                # IIR applies at/above this depth
+    singular_min_depth: int = 7           # SE eligibility depth
+    singular_margin: int = 3              # exclusion window: tt_score - margin*depth
+    probcut_min_depth: int = 5            # ProbCut eligibility depth
+    probcut_margin: int = 150             # verification threshold above beta
+    probcut_max_moves: int = 4            # good captures tried per ProbCut node
+    see_prune_max_depth: int = 3          # SEE capture pruning depth ceiling
+    see_prune_margin: int = 80            # per ply of depth
+
+
+# Implemented features that did not pass their self-play gate yet; they stay
+# default-off in the shipped engine (see the field comments above).
+_EXPERIMENTAL_FLAGS = frozenset({
+    "use_singular",
+    "use_probcut",
+    "use_nmp_dynamic",
+})
+
 
 def strong_config() -> SearchConfig:
-    """Return the fully-enhanced configuration (all flags on)."""
+    """Return the shipped configuration: every gate-passing flag enabled
+    (experimental, gate-neutral flags stay off — see _EXPERIMENTAL_FLAGS)."""
     return SearchConfig()
 
 
@@ -141,6 +183,32 @@ def v14_strong_config() -> SearchConfig:
     """
     bool_overrides = {
         f.name: (f.name in _V14_BOOL_FLAGS)
+        for f in fields(SearchConfig) if isinstance(f.default, bool)
+    }
+    return replace(SearchConfig(), **bool_overrides)
+
+
+# The bool flag-set of the v1.5 shipped engine (v1.4 set plus the v1.5
+# additions), frozen so the v1.6 strengthening round is measured against
+# exactly the engine it started from.
+_V15_BOOL_FLAGS = _V14_BOOL_FLAGS | frozenset({
+    "use_lmr_matrix",
+    "use_improving",
+    "use_cont_history",
+    "use_hanging_penalty",
+    "use_tuned_weights",
+})
+
+
+def v15_strong_config() -> SearchConfig:
+    """Return the shipped v1.5 engine configuration, frozen for regression A/B.
+
+    Any bool flag added after 1.5 is automatically False here.
+    ``selfplay --a strong --b v15`` measures what the current engine gained
+    over the 1.5 release.
+    """
+    bool_overrides = {
+        f.name: (f.name in _V15_BOOL_FLAGS)
         for f in fields(SearchConfig) if isinstance(f.default, bool)
     }
     return replace(SearchConfig(), **bool_overrides)

@@ -19,7 +19,9 @@ presentation layer was rewritten for the web (HTML/Canvas/JS).
 
 - Human vs AI and AI-vs-AI (watch) modes
 - Three difficulties: Easy (3-ply), Medium (5-ply), Hard (iterative deepening,
-  ~2.5 s budget) — the same negamax/PVS engine as the desktop release (v1.5)
+  ~2.5 s budget) — the desktop negamax/PVS engine, upgraded here to **v1.6**
+  (internal iterative reduction, capture history, SEE pruning; adopted after a
+  300-game self-play gate at 53.7% vs the frozen v1.5 control)
 - Choose who moves first (Blue always opens; "You move first" decides who
   controls Blue). When the AI opens, the board auto-flips so you play from
   the bottom

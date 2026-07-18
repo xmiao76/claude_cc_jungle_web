@@ -272,7 +272,7 @@ DIST_TO_BLUE_DEN = _dist_table(DEN_BLUE)
 # Versioning
 # ---------------------------------------------------------------------------
 
-VERSION = "1.5"
+VERSION = "1.6"
 
 # ---------------------------------------------------------------------------
 # Custom pygame event IDs (registered at runtime)
