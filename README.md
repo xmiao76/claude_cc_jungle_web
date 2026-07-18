@@ -13,7 +13,10 @@ presentation layer was rewritten for the web (HTML/Canvas/JS).
 
 ## Live demo
 
-**https://jungle-web.pages.dev** — deployed on the Cloudflare Pages free tier.
+**https://claude-jungle.pages.dev** — deployed on the Cloudflare Pages free tier.
+(The project name derives from the repo name `claude_cc_jungle_web`; DNS
+subdomains cannot contain underscores, so `claude_jungle` becomes
+`claude-jungle`.)
 
 ## Features
 
@@ -83,7 +86,7 @@ Option A — Git integration (recommended):
 Option B — Direct upload from the CLI:
 ```bash
 npx wrangler login
-npm run deploy       # wrangler pages deploy public --project-name jungle-web
+npm run deploy       # wrangler pages deploy public --project-name claude-jungle
 ```
 
 Post-deploy check: open the URL, wait for the loading screen to finish, play a

@@ -10,7 +10,7 @@
     "test:js": "node --test \"tests/js/*.test.mjs\"",
     "test:pyodide": "node tests/pyodide/smoke.mjs",
     "test:e2e": "playwright test",
-    "deploy": "wrangler pages deploy public --project-name jungle-web"
+    "deploy": "wrangler pages deploy public --project-name claude-jungle"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

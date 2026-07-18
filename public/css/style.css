@@ -88,6 +88,13 @@ button.secondary:hover { background: var(--border); }
 .rules { text-align: left; font-size: 0.85rem; color: var(--text-dim); }
 .rules summary { cursor: pointer; color: var(--text); }
 .rules p { margin-top: 8px; line-height: 1.5; }
+.rules ul { margin: 6px 0 6px 18px; }
+.rules li { margin: 4px 0; line-height: 1.45; }
+.rules b { color: var(--text); }
+
+.card.menu { max-height: 92vh; overflow-y: auto; }
+.credits { margin-top: -8px; }
+.credits b { color: var(--text); font-weight: 600; }
 
 /* Spinner */
 .spinner {

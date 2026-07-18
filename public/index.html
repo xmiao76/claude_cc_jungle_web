@@ -25,6 +25,8 @@
     <div class="card menu">
       <h1>Jungle <span class="subtitle">Dou Shou Qi</span></h1>
       <p id="engine-info" class="hint"></p>
+      <p class="hint credits">Made with model <b>Claude&nbsp;Fable&nbsp;5</b> (Anthropic)
+        · code agent <b>Claude&nbsp;Code</b></p>
 
       <div class="menu-row">
         <span class="label">Difficulty</span>
@@ -48,12 +50,34 @@
 
       <details class="rules">
         <summary>How to play</summary>
-        <p>Reach the opponent's <b>den</b> (gold square) or capture all their pieces.
-        Higher-ranked animals capture lower ones — except the <b>Rat</b>, which can
-        capture the <b>Elephant</b>. Only the Rat may swim. <b>Lion</b> and
-        <b>Tiger</b> jump the rivers (blocked by a Rat in the water). Pieces in an
-        enemy <b>trap</b> can be captured by anything. Click a piece, then a
-        highlighted square.</p>
+        <div>
+          <p><b>Goal:</b> win by moving any piece into the opponent's <b>den</b>
+          (the crown square), or by capturing every enemy piece.</p>
+          <p><b>Moving:</b> Blue moves first. Click one of your pieces, then click
+          a highlighted square — green dot = move, red ring = capture. Pieces move
+          one square up, down, left, or right (never diagonally).</p>
+          <p><b>Ranks</b> (strong → weak): Elephant, Lion, Tiger, Leopard, Wolf,
+          Dog, Cat, Rat. You may capture an enemy piece of <b>equal or lower</b>
+          rank on the square you move to — with one twist: the <b>Rat may capture
+          the Elephant</b>, but the Elephant can never capture the Rat.</p>
+          <ul>
+            <li><b>Rivers</b> (blue): only the Rat may swim. A Rat in the water
+            cannot be attacked from land and cannot attack pieces on land;
+            Rat-vs-Rat fights happen only on the same terrain.</li>
+            <li><b>River jumps:</b> the <b>Lion</b> leaps over a river in a
+            straight line — sideways or along its length — landing on the first
+            land square beyond; the <b>Tiger</b> leaps sideways only. The leap
+            may capture on landing. A Rat on any water square in the path
+            blocks the jump.</li>
+            <li><b>Traps</b> (brown squares beside each den): an enemy piece
+            standing in one of <i>your</i> traps loses all strength — any of
+            your pieces may capture it. Your own traps never harm you.</li>
+            <li><b>Dens:</b> you can never enter your own den.</li>
+          </ul>
+          <p><b>Also:</b> a player with no legal move loses; 50 moves by each
+          side without a capture is a draw. In-game buttons: Undo, Flip board
+          (view only), Mute, Menu.</p>
+        </div>
       </details>
     </div>
   </div>

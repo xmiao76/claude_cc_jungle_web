@@ -49,7 +49,19 @@ Do not restate the full rules in detail unless needed. The authoritative rule in
 
 - The final UI must be polished and attractive, not just functional — suitable for a public demo.
 - The board should visually show river, trap, den, land, and other terrain clearly (reuse existing tile art).
-- Each piece should look like its animal (reuse existing piece art).
+- Each piece should look like its animal (reuse existing piece art), and each piece must also
+  display the animal's short English name (e.g. "Rat", "Lion") in a small font on or under the
+  piece, readable on both sides' colors at any board size and following the piece during move
+  animations.
+- The main menu must display which AI model and which code agent were used to build the game
+  (e.g. "Made with model Claude Fable 5 (Anthropic) · code agent Claude Code"), alongside the
+  engine version and runtime info.
+- The main menu must include a "How to play" section with simple but complete guidance for a
+  brand-new player: the two win conditions, how to select and move pieces with the UI's input
+  model and move/capture indicators, the full rank order and the Rat-vs-Elephant exception,
+  river/swimming rules, Lion and Tiger river jumps (including rat-blocking), trap behavior,
+  the own-den restriction, the stalemate loss and the no-capture draw rule, and the in-game
+  controls (undo, board flip, mute).
 - Include good usability details: piece selection highlights, legal move indicators, capture feedback, move animations, turn display, move history panel, and win/loss messaging.
 - Support flipping the board upside down as a view option. This must only change the visual mapping of squares to pixels and mouse/touch coordinates back to squares. It must not change game state, must not swap sides internally, and must not change whose turn it is.
 - Support a clear UI option to choose whether the human player or the AI moves first; it must work correctly together with the board-flip option.
@@ -67,6 +79,10 @@ Do not restate the full rules in detail unless needed. The authoritative rule in
 ## Deployment requirements
 
 - Deploy to **Cloudflare Pages free tier** as a static site (no Functions, no Workers paid features, no server).
+- Derive the Pages project name (and therefore the `*.pages.dev` URL) from the meaningful part
+  of the repository/project name, shortened and hyphenated: DNS subdomains cannot contain
+  underscores, so e.g. a repo named `claude_cc_jungle_web` deploys as project `claude-jungle`
+  at `https://claude-jungle.pages.dev`. Document this naming derivation in the README.
 - Provide the exact local build + deploy workflow: local dev server command, production build command, and deployment via either Cloudflare Pages git integration or `wrangler pages deploy`.
 - Verify the deployed site after each deployment, not only the local build: load the public URL in a browser, complete at least one full game, and confirm assets/Pyodide load correctly (correct MIME types, CDN reachability).
 - The repository must include a `README.md` with: live demo URL, how to run locally, how to deploy, gameplay/controls notes, architecture overview (Pyodide + Worker design), and a clear statement identifying which model and which code agent were used to complete the task.
