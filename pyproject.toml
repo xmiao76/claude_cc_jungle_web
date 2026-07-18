@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+pythonpath = ["public/py", "."]
+addopts = "-q --tb=short"
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["node_modules", ".venv"]

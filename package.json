@@ -1,0 +1,19 @@
+{
+  "name": "claude-cc-jungle-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jungle (Dou Shou Qi) in the browser — Python engine on Pyodide, deployed to Cloudflare Pages",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "test:py": "python -m pytest",
+    "test:js": "node --test \"tests/js/*.test.mjs\"",
+    "test:pyodide": "node tests/pyodide/smoke.mjs",
+    "test:e2e": "playwright test",
+    "deploy": "wrangler pages deploy public --project-name jungle-web"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "pyodide": "0.27.7"
+  }
+}

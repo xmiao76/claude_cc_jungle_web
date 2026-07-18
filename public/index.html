@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jungle — Dou Shou Qi</title>
+  <meta name="description" content="Play Jungle (Dou Shou Qi) against an AI, entirely in your browser. Python engine running on Pyodide.">
+  <link rel="icon" href="assets/tiles/icon.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Loading -->
+  <div id="loading-overlay" class="overlay">
+    <div class="card">
+      <h1>Jungle <span class="subtitle">Dou Shou Qi</span></h1>
+      <div class="spinner"></div>
+      <p id="loading-stage">Starting…</p>
+      <p class="hint">First load downloads the Python runtime (~10&nbsp;MB); it is cached afterwards.</p>
+    </div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu-overlay" class="overlay" hidden>
+    <div class="card menu">
+      <h1>Jungle <span class="subtitle">Dou Shou Qi</span></h1>
+      <p id="engine-info" class="hint"></p>
+
+      <div class="menu-row">
+        <span class="label">Difficulty</span>
+        <div class="segmented">
+          <button class="diff-btn" data-d="0">Easy</button>
+          <button class="diff-btn active" data-d="1">Medium</button>
+          <button class="diff-btn" data-d="2">Hard</button>
+        </div>
+      </div>
+
+      <div class="menu-row">
+        <label class="label" for="first-toggle">You move first</label>
+        <label class="switch">
+          <input type="checkbox" id="first-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <button id="btn-start-hva" class="primary">▶ Play vs AI</button>
+      <button id="btn-start-ava" class="secondary">🤖 Watch AI vs AI</button>
+
+      <details class="rules">
+        <summary>How to play</summary>
+        <p>Reach the opponent's <b>den</b> (gold square) or capture all their pieces.
+        Higher-ranked animals capture lower ones — except the <b>Rat</b>, which can
+        capture the <b>Elephant</b>. Only the Rat may swim. <b>Lion</b> and
+        <b>Tiger</b> jump the rivers (blocked by a Rat in the water). Pieces in an
+        enemy <b>trap</b> can be captured by anything. Click a piece, then a
+        highlighted square.</p>
+      </details>
+    </div>
+  </div>
+
+  <!-- Game -->
+  <div id="game-area" hidden>
+    <canvas id="board" width="448" height="576"></canvas>
+    <aside id="panel">
+      <h2>Jungle</h2>
+      <p id="game-sub" class="hint"></p>
+      <div id="status">
+        <span id="status-spinner" class="spinner small" hidden></span>
+        <span id="status-text">—</span>
+      </div>
+      <div class="buttons">
+        <button id="btn-undo">↩ Undo</button>
+        <button id="btn-flip">⇅ Flip board</button>
+        <button id="btn-mute">🔊 Mute</button>
+        <button id="btn-pause" hidden>⏸ Pause</button>
+        <button id="btn-menu">☰ Menu</button>
+      </div>
+      <div class="captured">
+        <div><span class="dot blue"></span>Blue lost: <span id="captured-blue">—</span></div>
+        <div><span class="dot black"></span>Black lost: <span id="captured-black">—</span></div>
+      </div>
+      <h3>Moves</h3>
+      <ul id="history-list"></ul>
+    </aside>
+  </div>
+
+  <!-- Game over -->
+  <div id="gameover-overlay" class="overlay translucent" hidden>
+    <div class="card">
+      <h1 id="gameover-title"></h1>
+      <p id="gameover-sub"></p>
+      <button id="btn-again" class="primary">Play again</button>
+      <button id="btn-tomenu" class="secondary">Main menu</button>
+    </div>
+  </div>
+
+  <!-- Fatal error -->
+  <div id="error-overlay" class="overlay" hidden>
+    <div class="card">
+      <h1>Something went wrong</h1>
+      <p id="error-text"></p>
+      <button id="btn-reload" class="primary">Reload</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
