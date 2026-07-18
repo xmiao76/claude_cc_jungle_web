@@ -13,8 +13,7 @@ presentation layer was rewritten for the web (HTML/Canvas/JS).
 
 ## Live demo
 
-Deploy to Cloudflare Pages (see below) and put your URL here, e.g.
-`https://jungle-web.pages.dev`.
+**https://jungle-web.pages.dev** — deployed on the Cloudflare Pages free tier.
 
 ## Features
 
