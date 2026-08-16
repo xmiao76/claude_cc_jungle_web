@@ -1,0 +1,16 @@
+[package]
+name = "jungle-cli"
+description = "Developer tooling for the Jungle engine: protocol host, bench, perft"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+jungle-core = { path = "../jungle-core" }
+jungle-eval = { path = "../jungle-eval" }
+jungle-search = { path = "../jungle-search" }
+
+[[bin]]
+name = "jungle"
+path = "src/main.rs"

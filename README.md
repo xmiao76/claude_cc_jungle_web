@@ -1,15 +1,18 @@
 # Jungle (Dou Shou Qi) — Web Edition
 
-Play the classic **Jungle / Dou Shou Qi** board game against an AI, entirely in
-your browser. The original Python game engine and alpha-beta AI run **client-side
-via [Pyodide](https://pyodide.org)** (CPython compiled to WebAssembly) inside a
-Web Worker — no server, no backend, zero hosting cost on the
-**Cloudflare Pages free tier**.
+Play the classic **Jungle / Dou Shou Qi** board game against a strong AI, entirely
+in your browser. The engine is **Rust compiled to WebAssembly**, running in a Web
+Worker — no server, no backend, zero hosting cost on the **Cloudflare Pages free
+tier**.
 
-This is the web port of the Windows desktop app in `claude_cc_jungle`
-(Python + Pygame). The `engine/` and `ai/` packages are reused **verbatim** —
-a single Python source of truth for the rules and the AI — and only the
-presentation layer was rewritten for the web (HTML/Canvas/JS).
+This is the web port of the Windows desktop app in `claude_cc_jungle`, and it
+shares that project's engine: the `rust/` workspace is vendored from it, with a
+`wasm-bindgen` bridge added here. See [`rust/VENDORED.md`](rust/VENDORED.md) for
+provenance and for the two rule divergences found (and fixed) while vendoring.
+
+The original Python engine is still in the repository, under `engine-python/`. It
+no longer plays and is no longer downloaded: it is the oracle the Rust engine is
+verified against, on 10,000 positions and by exhaustive perft.
 
 ## Live demo
 
@@ -18,21 +21,45 @@ presentation layer was rewritten for the web (HTML/Canvas/JS).
 subdomains cannot contain underscores, so `claude_jungle` becomes
 `claude-jungle`.)
 
+## The engine
+
+Measured on this machine at a 2-second budget, on the engine's own bench
+positions:
+
+| Engine | depth | nodes/sec |
+|---|---|---|
+| Python (`engine-python/`), CPython | 8–10 | 23–30k |
+| Python through Pyodide — what this site used to ship | ~5–7 | slower again |
+| **Rust/wasm — what it ships now** | **15–16** | **2.2M** |
+| Rust, native, for reference | 17 | 3.0M |
+
+In the desktop project the same Rust engine scored **+424 Elo [+372, +495]** over
+the Python v1.5 engine across 200 games at 500 ms per move, winning 168-0-32. For
+scale, the entire multi-version Python strengthening effort that preceded it was
+worth +171 Elo.
+
+The payload went the other way: **~10 MB down to 94 KB** (42 KB gzipped), and boot
+from several seconds to well under a tenth of one.
+
+On top of the port, two search changes have since been measured and adopted —
+`use_improving` (+26 Elo [+15, +36] over 2000 games) and `use_tt_eval` (+4.6%
+nodes/sec at identical node counts). Three others were implemented, measured, and
+rejected. Every result, including the failures, is in
+[`rust/STRENGTH.md`](rust/STRENGTH.md).
+
 ## Features
 
 - Human vs AI and AI-vs-AI (watch) modes
 - Three difficulties: Easy (3-ply), Medium (5-ply), Hard (iterative deepening,
-  ~2.5 s budget) — the desktop negamax/PVS engine, upgraded here to **v1.6**
-  (internal iterative reduction, capture history, SEE pruning; adopted after a
-  300-game self-play gate at 53.7% vs the frozen v1.5 control)
+  ~2.5 s budget). Every level now has a real wall-clock bound; under the Python
+  engine, Easy and Medium set a time limit of 999,999 seconds and were bounded by
+  nothing at all.
 - Choose who moves first (Blue always opens; "You move first" decides who
   controls Blue). When the AI opens, the board auto-flips so you play from
   the bottom
 - Two-click move input with legal-move indicators, capture highlights, move
   animation, capture flash, move history, captured-piece list, undo,
   board flip (visual only), sound effects with mute
-- Loading screen while the Python runtime initializes (~10 MB first load,
-  cached afterwards)
 
 ## Architecture
 
@@ -40,25 +67,34 @@ subdomains cannot contain underscores, so `claude_jungle` becomes
 Main thread (JS)                     Web Worker
 ┌─────────────────────────┐  msgs   ┌────────────────────────────┐
 │ main.js    UI state     │ ──────► │ engine-worker.js           │
-│ board-renderer.js Canvas│ ◄────── │  Pyodide (Python 3.12 wasm)│
-│ coords.js  mapping      │  JSON   │   web_api.py  JSON bridge  │
-│ audio.js   Web Audio    │         │    engine/  game rules     │
-│ worker-client.js        │         │    ai/      negamax PVS    │
+│ board-renderer.js Canvas│ ◄────── │  jungle_wasm.wasm  (89 KB) │
+│ coords.js  mapping      │  JSON   │   session.rs  JSON bridge  │
+│ audio.js   Web Audio    │         │    jungle-core  rules      │
+│ worker-client.js        │         │    jungle-search  PVS      │
 └─────────────────────────┘         └────────────────────────────┘
 ```
 
-- The worker owns the authoritative `GameState`; the UI never re-implements
-  rules in JS (no rule drift).
-- The AI searches inside the worker, so the page stays responsive — the web
-  equivalent of the desktop app's AI thread.
+- The worker owns the authoritative position; the UI never re-implements rules in
+  JS (no rule drift).
+- The AI searches inside the worker, so the page stays responsive.
 - Board flip is purely visual: the engine always sees Blue at the bottom
   (row 8), exactly like the desktop renderer.
+- The JSON protocol is unchanged from the Python bridge it replaced, which is why
+  the renderer, the coordinate helpers and the browser tests needed no edits. The
+  same assertions run against both implementations
+  (`tests/python/test_web_api.py` and `rust/crates/jungle-wasm/tests/bridge.rs`).
 
 ## Run locally
 
-Requires Node ≥ 20 and Python ≥ 3.11 (Python only for tests).
+Requires Node ≥ 20, a Rust toolchain with the `wasm32-unknown-unknown` target,
+[`wasm-pack`](https://rustwasm.github.io/wasm-pack/), and Python ≥ 3.11 (Python
+for the oracle tests only).
 
 ```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack        # once
+
+npm run build:wasm   # builds public/wasm/ — required before dev or deploy
 npm run dev          # serves public/ at http://localhost:8788
 ```
 
@@ -68,29 +104,36 @@ npm run dev          # serves public/ at http://localhost:8788
 python -m venv .venv && .venv/Scripts/pip install pytest   # once (Windows)
 npm install                                                # once
 
-npm run test:py        # 139 pytest tests: full desktop engine/AI suite + web bridge
-npm run test:js        # JS unit tests (coordinate mapping, terrain)
-npm run test:pyodide   # engine smoke test under a real Pyodide runtime (Node)
-npm run test:e2e       # Playwright: browser load, clicks, AI replies, full game
-                       # (first time: npx playwright install chromium)
+npm run test:rust    # 107 Rust tests: engine, perft, golden corpora, bridge protocol
+npm run test:py      # 156 pytest tests: Python oracle, perft, golden corpus, bridge
+npm run test:js      # JS unit tests (coordinate mapping, terrain)
+npm run test:wasm    # engine smoke test + bench against the real .wasm (Node)
+npm run test:e2e     # Playwright: browser load, clicks, AI replies, full game
+                     # (first time: npx playwright install chromium)
 ```
+
+Two rule implementations live here, which is normally how rule sets quietly
+diverge. It is safe only because the agreement is measured on every run: frozen
+perft counts, and a 10,000-position golden corpus of legal moves, terminal status
+and winner. `python -m tools.golden` regenerates the corpus, and it must come out
+byte-for-byte identical — a test asserts exactly that.
 
 ## Deploy to Cloudflare Pages (free)
 
-Option A — Git integration (recommended):
-1. Push this repo to GitHub.
-2. Cloudflare dashboard → Workers & Pages → Create → Pages → connect the repo.
-3. Build command: *(leave empty)* · Build output directory: `public`.
-4. Every push to `main` deploys automatically.
+There is a build step now, so `public/wasm/` must be produced before upload.
 
-Option B — Direct upload from the CLI:
+Option A — Direct upload from the CLI (what `npm run deploy` does):
 ```bash
 npx wrangler login
-npm run deploy       # wrangler pages deploy public --project-name claude-jungle
+npm run deploy       # runs build:wasm, then wrangler pages deploy public
 ```
 
-Post-deploy check: open the URL, wait for the loading screen to finish, play a
-few moves on Easy, and confirm no errors in the browser console.
+Option B — Git integration: set the build command to `npm run build:wasm` and the
+build output directory to `public`. Leaving the build command empty will deploy a
+site with no engine in it.
+
+Post-deploy check: open the URL, confirm the board appears almost immediately,
+play a few moves on Hard, and confirm no errors in the browser console.
 
 ## Project layout
 
@@ -98,32 +141,47 @@ few moves on Easy, and confirm no errors in the browser console.
 public/            deployed static site
   index.html       UI shell
   css/, js/        presentation layer (Canvas renderer, worker client)
-  js/engine-worker.js  Pyodide host (pinned v0.27.7 from jsDelivr CDN)
-  py/              Python sources loaded into Pyodide
-    config.py      constants (verbatim from desktop)
-    engine/        rules, board, move generation (verbatim)
-    ai/            negamax PVS search, evaluator (verbatim)
-    web_api.py     JSON bridge for the worker (web-only)
+  js/engine-worker.js  loads and drives the wasm engine
+  wasm/            build output: jungle_wasm.js + jungle_wasm_bg.wasm (gitignored)
   assets/          piece/tile art + sounds (from the desktop release)
-tests/python/      pytest: desktop suite + web_api bridge tests
+rust/              the engine (vendored — see rust/VENDORED.md)
+  crates/jungle-core     rules, bitboards, move generation, perft
+  crates/jungle-eval     static evaluation
+  crates/jungle-search   negamax PVS, TT, ordering, SEE, quiescence
+  crates/jungle-wasm     the browser bridge (this repo's own)
+  crates/jungle-cli      dev-only: bench, perft, SPRT match runner
+engine-python/     the Python engine: test oracle only, not shipped
+tests/golden/      10,000-position rules + evaluation corpora
+tests/python/      pytest: Python engine, perft, golden corpus, bridge
 tests/js/          node --test unit tests
-tests/pyodide/     smoke test under real Pyodide (Node)
+tests/wasm/        smoke test + bench against the built .wasm (Node)
 tests/e2e/         Playwright browser tests
-tools/             dev-only: static server, strength harness (not deployed)
+tools/             dev-only: static server, corpus generator, Python harness
 ```
 
 ## Rules interpretation
 
-Identical to the desktop engine (`engine/rules.py`): Lion jumps rivers
-horizontally (3 squares) and vertically (2); Tiger jumps vertically only; a
-Rat on any water square along the path blocks the jump; Rat may capture the
-Elephant from land; pieces in an enemy trap are rank-0; win by den entry or
-capturing every enemy piece; stalemate loses; 100 plies without a capture is
-a draw.
+Matches the desktop engine, and both implementations here are checked against
+each other on all of it:
+
+- The river is columns {1,2} and {4,5} across rows {3,4,5}. A **horizontal**
+  (column-axis) leap crosses **2** river squares; a **vertical** (row-axis) leap
+  crosses **3**. The Lion makes both; the **Tiger makes the horizontal one only.**
+- A Rat of *either* colour on any water square along the path blocks a leap.
+- A Rat on land may capture the Elephant; the Elephant may not capture a Rat.
+- Captures never cross the water/land boundary, in either direction. This is what
+  makes a Rat in the river safe from the bank — and what stops it taking an
+  Elephant standing there.
+- A piece in an **enemy** trap has its rank reduced to 0 **for defence only**: it
+  can be taken by any adjacent enemy, the Elephant included, but it still attacks
+  at its own full rank. Vulnerable, not disarmed. A piece in its *own* trap is
+  unaffected.
+- Win by den entry or by capturing every enemy piece; having no legal move loses;
+  100 plies without a capture is a draw.
 
 ## Credits
 
 - Game: traditional Jungle / Dou Shou Qi
   ([rules](https://en.wikipedia.org/wiki/Jungle_(board_game)))
-- **Built with Claude Code using the Claude Fable 5 model (Anthropic).**
-  The desktop engine this port reuses was also developed with Claude Code.
+- **Built with Claude Code (Anthropic).** The Rust engine this port ships was
+  developed in the desktop project, also with Claude Code.

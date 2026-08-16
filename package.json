@@ -1,19 +1,21 @@
 {
   "name": "claude-cc-jungle-web",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Jungle (Dou Shou Qi) in the browser — Python engine on Pyodide, deployed to Cloudflare Pages",
+  "description": "Jungle (Dou Shou Qi) in the browser — Rust engine compiled to WebAssembly, deployed to Cloudflare Pages",
   "type": "module",
   "scripts": {
     "dev": "node tools/serve.mjs",
+    "build:wasm": "cd rust/crates/jungle-wasm && wasm-pack build --release --target no-modules --no-pack --no-typescript --out-dir ../../../public/wasm",
     "test:py": "python -m pytest",
+    "test:rust": "cd rust && cargo test --release",
     "test:js": "node --test \"tests/js/*.test.mjs\"",
-    "test:pyodide": "node tests/pyodide/smoke.mjs",
+    "test:wasm": "node tests/wasm/smoke.mjs",
     "test:e2e": "playwright test",
+    "predeploy": "npm run build:wasm",
     "deploy": "wrangler pages deploy public --project-name claude-jungle"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
-    "pyodide": "0.27.7"
+    "@playwright/test": "^1.49.0"
   }
 }

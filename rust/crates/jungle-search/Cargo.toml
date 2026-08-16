@@ -1,0 +1,20 @@
+[package]
+name = "jungle-search"
+description = "Negamax PVS search for Jungle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+jungle-core = { path = "../jungle-core" }
+jungle-eval = { path = "../jungle-eval" }
+
+# The clock, and nothing else. `wasm32-unknown-unknown` has no clock syscall, so
+# `std::time::Instant::now()` compiles there and panics at runtime; see
+# `src/clock.rs`. Target-gated so a native build stays free of external crates.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
+[lib]
+name = "jungle_search"

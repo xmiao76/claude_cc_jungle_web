@@ -7,3 +7,8 @@ test-results/
 playwright-report/
 .coverage
 .wrangler/
+rust/target/
+# Build output: `npm run build:wasm` produces it, and `npm run deploy` runs that
+# first. Stated here rather than relying on the .gitignore wasm-pack writes.
+public/wasm/
+

@@ -1,16 +1,21 @@
-// End-to-end tests: real browser, real Pyodide from the CDN, real engine.
+// End-to-end tests: real browser, real worker, real engine.
+//
+// These are the evidence that swapping the engine did not change the protocol:
+// apart from the backend name asserted just below, every test here passed
+// unchanged across the move from Pyodide to Rust/WebAssembly.
 
 import { test, expect } from '@playwright/test';
 
-// Pyodide download + init dominates; do it once per test via cache.
+// Boot used to be a ~10 MB CPython download and needed a 150-second allowance.
+// It is now two same-origin files under 100 KB.
 async function waitForMenu(page) {
   await page.goto('/');
-  await expect(page.locator('#menu-overlay')).toBeVisible({ timeout: 150_000 });
+  await expect(page.locator('#menu-overlay')).toBeVisible({ timeout: 20_000 });
 }
 
-test('loads and initializes the Python engine', async ({ page }) => {
+test('loads and initializes the wasm engine', async ({ page }) => {
   await waitForMenu(page);
-  await expect(page.locator('#engine-info')).toContainText('Python');
+  await expect(page.locator('#engine-info')).toContainText('WebAssembly');
   await expect(page.locator('#error-overlay')).toBeHidden();
 });
 
@@ -60,8 +65,8 @@ test('undo returns the game to the human turn', async ({ page }) => {
 
 test('full AI-vs-AI game reaches a valid terminal state in-browser', async ({ page }) => {
   await waitForMenu(page);
-  // Drive the engine stack directly (worker + Pyodide + engine) for speed;
-  // UI-level interaction is covered by the click test above.
+  // Drive the engine stack directly (worker + wasm) for speed; UI-level
+  // interaction is covered by the click test above.
   const result = await page.evaluate(async () => {
     const client = window.__jungle.app.client;
     let { state } = await client.newGame(0);

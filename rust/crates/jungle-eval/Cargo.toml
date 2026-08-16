@@ -1,0 +1,16 @@
+[package]
+name = "jungle-eval"
+description = "Static position evaluation for Jungle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+jungle-core = { path = "../jungle-core" }
+
+[dev-dependencies]
+flate2 = "1"
+
+[lib]
+name = "jungle_eval"

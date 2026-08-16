@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+# `jungle-py`, the PyO3 extension, is deliberately not vendored here: this repo
+# ships to a browser, so nothing loads it, and it would drag pyo3 -> libc and a
+# build-time Python interpreter into CI for no consumer. See VENDORED.md.
+members = ["crates/jungle-core", "crates/jungle-eval", "crates/jungle-search", "crates/jungle-cli", "crates/jungle-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+
+# Benchmarks and perft runs are worthless at opt-level 0, and the golden-corpus
+# test walks 10k positions, so tests get real optimization too.
+[profile.test]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1

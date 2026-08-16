@@ -6,25 +6,77 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # The engine that ships. Its own tests, plus the two halves of the
+  # differential oracle it shares with the Python engine: frozen perft counts
+  # and the 10,000-position golden corpora.
+  rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      # Only the crate this repository authored. The vendored crates are not
+      # rustfmt-clean upstream, and reformatting them would churn every future
+      # sync for no benefit — see rust/VENDORED.md.
+      - name: Format (jungle-wasm)
+        run: cargo fmt -p jungle-wasm --check
+        working-directory: rust
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: rust
+      - name: Tests
+        run: cargo test --release
+        working-directory: rust
+      # The engine compiles for the browser. Proving this in CI matters more than
+      # it looks: `std::time::Instant` builds for wasm32 and panics at runtime, so
+      # a regression here is invisible on the host.
+      - name: Build for wasm32
+        run: cargo build --release -p jungle-wasm --target wasm32-unknown-unknown
+        working-directory: rust
 
+  # The oracle. Not shipped, but it is what proves the Rust rules are right.
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Python engine + bridge tests
+      - name: Python engine, bridge and golden-corpus tests
         run: |
           pip install pytest
           python -m pytest
 
+  # The browser. E2E was previously left out of CI because it needed a ~10 MB
+  # Pyodide download from a CDN; the engine is now same-origin and under 100 KB,
+  # and the whole suite runs in seconds.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: jetli/wasm-pack-action@v0.4.0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: npm ci
+      - name: Build the wasm engine
+        run: npm run build:wasm
       - name: JS unit tests
         run: npm run test:js
-      - name: Pyodide smoke test
-        run: |
-          npm ci
-          npm run test:pyodide
+      - name: Engine smoke test
+        run: npm run test:wasm
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e

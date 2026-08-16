@@ -1,0 +1,18 @@
+[package]
+name = "jungle-core"
+description = "Jungle (Dou Shou Qi) board representation, rules and move generation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Deliberately dependency-free: this crate is the rules contract, it must build
+# offline, and nothing it does needs a crate. Test-only helpers that do need one
+# (gzip for the golden corpus) live behind a dev-dependency.
+[dependencies]
+
+[dev-dependencies]
+flate2 = "1"
+
+[lib]
+name = "jungle_core"

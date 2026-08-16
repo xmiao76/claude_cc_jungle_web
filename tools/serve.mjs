@@ -15,7 +15,9 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json',
-  '.py': 'text/x-python; charset=utf-8',
+  // Required, not cosmetic: WebAssembly.instantiateStreaming rejects any
+  // response that is not application/wasm.
+  '.wasm': 'application/wasm',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.wav': 'audio/wav',

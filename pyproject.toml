@@ -1,7 +1,10 @@
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
-pythonpath = ["public/py", "."]
+pythonpath = ["engine-python", "."]
 addopts = "-q --tb=short"
+markers = [
+    "slow: regenerates the golden corpus from scratch (~1 min); deselect with -m 'not slow'",
+]
 
 [tool.ruff]
 line-length = 100

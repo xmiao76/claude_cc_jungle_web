@@ -10,10 +10,10 @@ const BLUE = 0;
 const BLACK = 1;
 const AVA_MOVE_DELAY_MS = 400;
 
+// One stage now. The Pyodide boot had three because it took seconds; the wasm
+// engine is under 100 KB and this is rarely on screen long enough to read.
 const LOADING_STAGES = {
-  runtime: 'Downloading Python runtime…',
   engine: 'Loading game engine…',
-  import: 'Initializing AI…',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +32,7 @@ class App {
     this.aiThinking = false;
     this.avaPaused = false;
     this.gen = 0;                   // game generation: drops stale AI replies
+    this.lastSearch = null;         // depth/nodes from the engine's last search
     this.selected = null;
     this._undoInFlight = false;
   }
@@ -48,7 +49,7 @@ class App {
       const [info, assets] = await Promise.all([this.client.init(), loadAssets()]);
       this.renderer = new BoardRenderer($('board'), assets);
       $('engine-info').textContent =
-        `engine v${info.engineVersion} · Python ${info.python} in your browser`;
+        `engine v${info.engineVersion} · Rust + WebAssembly in your browser`;
       this._bindUi();
       this._resize();
       window.addEventListener('resize', () => this._resize());
@@ -136,6 +137,7 @@ class App {
     const gen = this.gen;
     this.mode = mode;
     this.aiThinking = false;
+    this.lastSearch = null;
     this.avaPaused = false;
     this.selected = null;
     try {
@@ -269,6 +271,10 @@ class App {
     try {
       const res = await this.client.aiMove();
       if (gen !== this.gen) return;
+      // Search telemetry from the engine, shown under the difficulty. Worth a
+      // line of UI: "Hard" is a promise about strength, and this is the only
+      // place a player can see it kept.
+      this.lastSearch = res.search || null;
       await this._waitForAnimation();
       if (gen !== this.gen) return;
       this.aiThinking = false;
@@ -377,9 +383,13 @@ class App {
       (this.state.turn === this.humanColor || this.state.terminal));
 
     const diffName = ['Easy', 'Medium', 'Hard'][this.difficulty];
-    $('game-sub').textContent = this.mode === 'ava'
+    const base = this.mode === 'ava'
       ? `AI vs AI · ${diffName}`
       : `You play ${this.humanColor === BLUE ? 'Blue' : 'Black'} · ${diffName}`;
+    const s = this.lastSearch;
+    $('game-sub').textContent = s
+      ? `${base} · depth ${s.depth}${s.seldepth > s.depth ? `/${s.seldepth}` : ''}`
+      : base;
 
     $('captured-blue').textContent = this.state.captured.blue.join(', ') || '—';
     $('captured-black').textContent = this.state.captured.black.join(', ') || '—';

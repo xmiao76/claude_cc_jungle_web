@@ -1,78 +1,50 @@
-// Engine Web Worker: hosts Pyodide + the Python engine/AI so the UI thread
-// never blocks while the AI thinks. Classic worker (importScripts) for broad
-// browser support.
+// Engine Web Worker: hosts the Rust engine compiled to WebAssembly, so the UI
+// thread never blocks while the AI thinks. Classic worker (importScripts) for
+// broad browser support, which is why the module is built with wasm-pack's
+// `--target no-modules`.
+//
+// This replaced a Pyodide worker that downloaded a ~10 MB CPython build from a
+// CDN and then wrote fifteen .py files into its virtual filesystem. The engine is
+// now two same-origin files totalling under 100 KB, so the boot sequence is one
+// fetch and one instantiate, and there is nothing left to keep in sync by hand.
 
 'use strict';
 
-const PYODIDE_VERSION = '0.27.7';
-const PYODIDE_BASE = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
-
-// Python sources served alongside the site, loaded into Pyodide's FS.
-const PY_FILES = [
-  'config.py',
-  'web_api.py',
-  'engine/__init__.py',
-  'engine/pieces.py',
-  'engine/board.py',
-  'engine/rules.py',
-  'engine/move_generator.py',
-  'engine/game_state.py',
-  'ai/__init__.py',
-  'ai/search_config.py',
-  'ai/transposition.py',
-  'ai/see.py',
-  'ai/evaluator.py',
-  'ai/opening_book.py',
-  'ai/minimax.py',
-];
-
-let api = null;         // pyimport('web_api') proxy
+let api = null;         // the wasm_bindgen exports
 let initPromise = null;
 
 function post(msg) { self.postMessage(msg); }
 function progress(stage) { post({ type: 'progress', stage }); }
 
-async function initPyodide() {
-  progress('runtime');
-  importScripts(PYODIDE_BASE + 'pyodide.js');
-  const pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
-
+async function initEngine() {
   progress('engine');
-  const base = new URL('../py/', self.location).href;
-  const sources = await Promise.all(
-    PY_FILES.map(async (path) => {
-      const res = await fetch(base + path);
-      if (!res.ok) throw new Error(`failed to fetch ${path}: ${res.status}`);
-      return [path, await res.text()];
-    })
-  );
-  pyodide.FS.mkdirTree('/game/engine');
-  pyodide.FS.mkdirTree('/game/ai');
-  for (const [path, text] of sources) {
-    pyodide.FS.writeFile('/game/' + path, text);
-  }
-  pyodide.runPython("import sys; sys.path.insert(0, '/game')");
-
-  progress('import');
-  api = pyodide.pyimport('web_api');
-  return JSON.parse(api.engine_info());
+  const base = new URL('../wasm/', self.location).href;
+  importScripts(base + 'jungle_wasm.js');
+  // `wasm_bindgen` is the global the no-modules build defines.
+  await wasm_bindgen({ module_or_path: base + 'jungle_wasm_bg.wasm' });
+  // Turn a Rust panic into a console error with a stack, rather than the bare
+  // "unreachable executed" a release build would otherwise surface.
+  wasm_bindgen.start();
+  api = wasm_bindgen;
+  return JSON.parse(api.engineInfo());
 }
 
-// Bridge calls: every web_api function returns a JSON envelope string.
+// Bridge calls: every engine function returns the same JSON envelope string the
+// Python bridge returned, which is why nothing above this file had to change.
 function callApi(type, payload) {
   switch (type) {
     case 'new_game':
-      return api.new_game(payload.difficulty);
+      return api.newGame(payload.difficulty);
     case 'apply_move':
-      return api.apply_move(payload.fc, payload.fr, payload.tc, payload.tr);
+      return api.applyMove(payload.fc, payload.fr, payload.tc, payload.tr);
     case 'ai_move':
-      return api.ai_move(payload.budgetMs ?? null);
+      return api.aiMove(payload.budgetMs ?? undefined);
     case 'undo':
-      return api.undo_for_human(payload.humanColor);
+      return api.undoForHuman(payload.humanColor);
     case 'get_state':
-      return api.get_state();
+      return api.getState();
     case 'replay':
-      return api.replay_moves(JSON.stringify(payload.moves));
+      return api.replayMoves(JSON.stringify(payload.moves));
     default:
       throw new Error(`unknown message type: ${type}`);
   }
@@ -82,7 +54,7 @@ self.onmessage = async (ev) => {
   const { id, type, payload } = ev.data;
   try {
     if (type === 'init') {
-      initPromise = initPromise || initPyodide();
+      initPromise = initPromise || initEngine();
       const info = await initPromise;
       post({ id, ok: true, data: info.data });
       return;
