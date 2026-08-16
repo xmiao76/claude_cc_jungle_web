@@ -13,7 +13,7 @@
     "test:wasm": "node tests/wasm/smoke.mjs",
     "test:e2e": "playwright test",
     "predeploy": "npm run build:wasm",
-    "deploy": "wrangler pages deploy public --project-name claude-jungle"
+    "deploy": "npx wrangler pages deploy public --project-name claude-jungle"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0"
