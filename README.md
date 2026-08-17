@@ -183,5 +183,6 @@ each other on all of it:
 
 - Game: traditional Jungle / Dou Shou Qi
   ([rules](https://en.wikipedia.org/wiki/Jungle_(board_game)))
-- **Built with Claude Code (Anthropic).** The Rust engine this port ships was
-  developed in the desktop project, also with Claude Code.
+- **Model: Claude Opus 5 (Anthropic). Code agent: Claude Code (Anthropic).** The
+  same statement is shown on the game's main menu. The Rust engine this port
+  ships was developed in the desktop project, also with Claude Code.
